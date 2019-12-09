@@ -105,4 +105,60 @@ X = nd.ones((2,1,4))
 Y = nd.ones((2,4,6))
 nd.batch_dot(X,Y).shape
 
-def
+# 跳字模型
+def skip_gram(center, contexts_and_negatives, embed_v, embed_u):
+    v = embed_v(center)
+    u = embed_u(contexts_and_negatives)
+    pred = nd.batch_dot(v, u.swapaxes(1,2))
+    return pred
+
+# 二元交叉熵损失函数
+loss = gloss.SigmoidBinaryCrossEntropyLoss()
+pred = nd.array([[1.5,0.3,-1,2],[1.1,-0.6,2.2,0.4]])
+
+label = nd.array([[1,0,0,0],[1,1,0,0]])
+mask = nd.array([[1,1,1,1],[1,1,1,0]])
+loss(pred, label, mask) * mask.shape[1] / mask.sum(axis=1)
+
+def sigmd(x):
+    return -math.log(1/(1+math.exp(-x)))
+
+embed_size = 100
+net = nn.Sequential()
+net.add(nn.Embedding(input_dim=len(idx_to_token), output_dim=embed_size),
+        nn.Embedding(input_dim=len(idx_to_token),output_dim=embed_size))
+
+def train(net, lr, num_epochs):
+    ctx = d2l.try_gpu()
+    net.initialize(ctx=ctx, force_reinit=True)
+    trainer = gluon.Trainer(net.collect_params(), 'adam',
+                            {'learning_rate': lr})
+    for epoch in range(num_epochs):
+        start, l_sum, n = time.time(), 0.0, 0
+        for batch in data_iter:
+            center, context_negative, mask, label = [
+                data.as_in_context(ctx) for data in batch]
+            with autograd.record():
+                pred = skip_gram(center, context_negative, net[0], net[1])
+                # 使用掩码变量mask来避免填充项对损失函数计算的影响
+                l = (loss(pred.reshape(label.shape), label, mask) *
+                     mask.shape[1] / mask.sum(axis=1))
+            l.backward()
+            trainer.step(batch_size)
+            l_sum += l.sum().asscalar()
+            n += l.size
+        print('epoch %d, loss %.2f, time %.2fs'
+              % (epoch + 1, l_sum / n, time.time() - start))
+
+train(net,0.005,5)
+
+def get_similar_tokens(query_token, k, embed):
+    W = embed.weight.data()
+    x = W[token_to_idx[query_token]]
+    # 添加的1e-9是为了数值稳定性
+    cos = nd.dot(W, x) / (nd.sum(W * W, axis=1) * nd.sum(x * x) + 1e-9).sqrt()
+    topk = nd.topk(cos, k=k+1, ret_typ='indices').asnumpy().astype('int32')
+    for i in topk[1:]:  # 除去输入词
+        print('cosine sim=%.3f: %s' % (cos[i].asscalar(), (idx_to_token[i])))
+
+get_similar_tokens('harry', 3, net[0])
